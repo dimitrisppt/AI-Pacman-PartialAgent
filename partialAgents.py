@@ -92,7 +92,7 @@ class PartialAgent(Agent):
 
         if self.predator_mode_on == False:
 
-            if not (not closestGhost):
+            if closestGhost:
                 print "there is a ghost aaaah"
                 manh_dist_pac_ghost = self.calculateDistanceFromGhosts(pacman_pos, closestGhost)
 
