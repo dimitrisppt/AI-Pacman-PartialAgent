@@ -56,6 +56,11 @@ class PartialAgent(Agent):
         self.stack = [] # List that acts as a stack
         # ------------------------------------------------------------------------------------------- #
 
+        self.positions_history = []
+        self.was_stuck = False
+
+        self.pacman_was_next_to_ghost = False
+
 
     # This is what gets run in between multiple games
     def final(self, state):
@@ -75,16 +80,39 @@ class PartialAgent(Agent):
         self.stack = [] # List that acts as a stack
         # ------------------------------------------------------------------------------------------- #
 
+        self.positions_history = []
+        self.was_stuck = False
 
+        self.pacman_was_next_to_ghost = False
 
+    # Adds legal moves back to the list of legal moves and returns the list
     def resetAvailableLegalMoves(self, state):
         legal = api.legalActions(state)
         if Directions.STOP in legal:
             legal.remove(Directions.STOP)
         return legal
 
+    # Calculates the manhattan distance of each and every direction, taken from Directions,
+    # and checks whether it's less than the manhattan distance between pacman and ghost.
+    # If that's the case then that direction is not a good move because brings the pacman closer
+    # to the ghost and hence it is removed from the list of available legal moves.
+    #
+    # Example: pacman coordinates: x = 7
+    #                              y = 1
+    #           ghost coordinates: x = 10
+    #                              y = 1
+    #         manh_dist_pac_ghost: abs(7-10) + abs(1-1) = 3
+    #         ---------------------------------------------
+    #              Direction.East: (x+1, y)
+    #          pacman coordinates: x = 8
+    #                              y = 1
+    #           ghost coordinates: x = 10
+    #                              y = 1
+    #         manh_dist_pac_ghost: abs(8-10) + abs(1-1) = 2
+    #         ---------------------------------------------
+    # If pacman moves East then the new position brings him closer to the ghost, thus it's not
+    # a good move and it's removed from the list of available legal moves.
     def avoidGhosts(self, pacman_pos, closest_ghost, manh_dist_pac_ghost, legal_moves):
-
         x_pac, y_pac = pacman_pos
         x_ghost, y_ghost = closest_ghost
 
@@ -109,15 +137,33 @@ class PartialAgent(Agent):
         return legal_moves
 
 
+
+    # Calculates the manhattan distance of each and every direction, taken from Directions,
+    # and checks whether it's greater than the manhattan distance between pacman and food.
+    # If that's the case then that direction is not a good move because brings the pacman further away
+    # from the nearest food and hence it is removed from the list of available legal moves.
+    #
+    # Example: pacman coordinates: x = 10
+    #                              y = 1
+    #            food coordinates: x = 7
+    #                              y = 1
+    #         manh_dist_pac_food: abs(10-7) + abs(1-1) = 3
+    #         ---------------------------------------------
+    #              Direction.East: (x+1, y)
+    #          pacman coordinates: x = 11
+    #                              y = 1
+    #            food coordinates: x = 7
+    #                              y = 1
+    #         manh_dist_pac_food: abs(11-7) + abs(1-1) = 4
+    #         ---------------------------------------------
+    # If pacman moves East then the new position brings him further away from the food, thus it's not
+    # a good move and it's removed from the list of available legal moves.
     def searchForFood(self, pacman_pos, closest_food, legal):
-        print "In search for food!!!!!!!!!!!!!!"
         x_pac, y_pac = pacman_pos
         x_food, y_food = closest_food
-
         manh_dist_pac_food = util.manhattanDistance(pacman_pos, closest_food)
 
         for direction in legal:
-
             if direction == Directions.EAST:
                 if util.manhattanDistance((x_pac + 1, y_pac), (x_food, y_food)) > manh_dist_pac_food:
                     legal.remove(direction)
@@ -134,18 +180,32 @@ class PartialAgent(Agent):
                 if util.manhattanDistance((x_pac, y_pac - 1), (x_food, y_food)) > manh_dist_pac_food:
                     legal.remove(direction)
 
-        # print "Length of legalmoves in searchforfood is %s" % (len(legal))
-        # if len(legal) == 0:
-        #     return None
-
         return legal
 
 
+    # Calculates the manhattan distance of each and every direction, taken from Directions,
+    # and checks whether it's greater than the manhattan distance between pacman and a capsule.
+    # If that's the case then that direction is not a good move because brings the pacman further away
+    # from the nearest capsule and hence it is removed from the list of available legal moves.
+    #
+    # Example: pacman coordinates: x = 10
+    #                              y = 1
+    #         capsule coordinates: x = 7
+    #                              y = 1
+    #       manh_dist_pac_capsule: abs(10-7) + abs(1-1) = 3
+    #       -----------------------------------------------
+    #              Direction.East: (x+1, y)
+    #          pacman coordinates: x = 11
+    #                              y = 1
+    #         capsule coordinates: x = 7
+    #                              y = 1
+    #       manh_dist_pac_capsule: abs(11-7) + abs(1-1) = 4
+    #       -----------------------------------------------
+    # If pacman moves East then the new position brings him further away from the capsule, thus it's not
+    # a good move and it's removed from the list of available legal moves.
     def searchForCapsule(self, pacman_pos, closest_capsule, legal):
-        print closest_capsule
         x_pac, y_pac = pacman_pos
         x_capsule, y_capsule = closest_capsule
-
         manh_dist_pac_capsule = util.manhattanDistance(pacman_pos, closest_capsule)
 
         for direction in legal:
@@ -171,8 +231,28 @@ class PartialAgent(Agent):
         return legal
 
 
-    def searchForGhostsToEat(self, pacman_pos, closest_ghost, manh_dist_pac_ghost, legal):
-        print "breaks here"
+    # This function is to make the pacman to chase the ghosts.
+    # Calculates the manhattan distance of each and every direction, taken from Directions,
+    # and checks whether it's greater than the manhattan distance between pacman and a ghost.
+    # If that's the case then that direction is not a good move because brings the pacman further away
+    # from the nearest ghost and hence it is removed from the list of available legal moves.
+    #
+    # Example: pacman coordinates: x = 10
+    #                              y = 1
+    #           ghost coordinates: x = 7
+    #                              y = 1
+    #         manh_dist_pac_ghost: abs(10-7) + abs(1-1) = 3
+    #       -----------------------------------------------
+    #              Direction.East: (x+1, y)
+    #          pacman coordinates: x = 11
+    #                              y = 1
+    #           ghost coordinates: x = 7
+    #                              y = 1
+    #         manh_dist_pac_ghost: abs(11-7) + abs(1-1) = 4
+    #       -----------------------------------------------
+    # If pacman moves East then the new position brings him further away from the ghost, thus it's not
+    # a good move and it's removed from the list of available legal moves.
+    def chaseGhosts(self, pacman_pos, closest_ghost, manh_dist_pac_ghost, legal):
         x_pac, y_pac = pacman_pos
         x_ghost, y_ghost = closest_ghost
 
@@ -195,6 +275,7 @@ class PartialAgent(Agent):
                     legal.remove(direction)
 
         return legal
+
 
     # Updates all the globally defined lists.
     # If pacman explores something new which is not in the list of explored_food or explored_capsules,
@@ -229,14 +310,48 @@ class PartialAgent(Agent):
 
         # Pacman eats a ghost and exits the predator mode because he cannot identify
         # edible ghosts from non-edible ones.
-        if pacman_pos in ghosts_list:
-            self.predator_mode_on = False
-            self.super_powers_time = 40
+        self.decideToExitPredatorMode(pacman_pos, ghosts_list)
 
         # Sets the flag "seen_any_ghosts" to True when pacman sees a ghost.
         # This happens to enter in a mode where it has to deal with ghosts.
         if len(ghosts_list) > 0:
             self.seen_any_ghosts = True
+
+        # Keep track of every visited position
+        self.positions_history.append(pacman_pos)
+
+
+    # Function that decides if it's time to exit predator mode
+    # To actually check whether pacman ate a ghost
+    #
+    #
+    #
+    #
+    #
+    #
+    #
+    #
+    #
+    def decideToExitPredatorMode(self, pacman_pos, ghosts_list):
+        new_round = True
+        closest_ghost = self.findNearbyGhosts(pacman_pos, ghosts_list)
+
+        if closest_ghost and self.predator_mode_on == True:
+            manh_dist_pac_ghost = util.manhattanDistance(pacman_pos, closest_ghost)
+            print "Manh dis is -> ", manh_dist_pac_ghost
+            print " positions are:", closest_ghost, " and ", pacman_pos
+
+            if manh_dist_pac_ghost <= 2:
+                self.pacman_was_next_to_ghost = True
+                new_round = False
+            else:
+                self.pacman_was_next_to_ghost = False
+                new_round = False
+
+        if self.pacman_was_next_to_ghost == True and new_round == True:
+            self.predator_mode_on = False
+            self.super_powers_time = 40
+            self.pacman_was_next_to_ghost == False
 
 
     # Calculates the closest food from pacman's position, if any, out of the
@@ -328,6 +443,7 @@ class PartialAgent(Agent):
             if self.predator_mode_on == False or self.super_powers_time <= 0:
 
                 if closestGhost:
+                    self.clearDfSearchVars()
                     print "there is a ghost aaaah"
                     manh_dist_pac_ghost = util.manhattanDistance(pacman_pos, closestGhost)
 
@@ -337,56 +453,50 @@ class PartialAgent(Agent):
                             return api.makeMove(next_move, legal)
 
                     elif manh_dist_pac_ghost <= 5:
-                        #next_move = self.searchForGhostsToEat(pacman_pos, closestGhost, manh_dist_pac_ghost, legal)
-                        next_move = self.searchForGhostsToEat(pacman_pos, closestGhost, manh_dist_pac_ghost, legal)
+                        #next_move = self.chaseGhosts(pacman_pos, closestGhost, manh_dist_pac_ghost, legal)
+                        next_move = self.chaseGhosts(pacman_pos, closestGhost, manh_dist_pac_ghost, legal)
                         if next_move in legal:
                             return api.makeMove(next_move, legal)
 
-                    else:
-                        print "---- DO we ever get here? ----"
-                        next_move = self.searchForFood(pacman_pos, closestFood, legal)
-                        # if next_move in legal:
-                        #     return api.makeMove(next_move, legal)
-                        if len(next_move) > 0:
-                            print "Oh shit"
-                            #pause = raw_input("Press enter")
-                        else:
-                            return api.makeMove(next_move, legal)
-                        # else:
-                        #     # if len(legal) == 0:
-                        #     #     legal = api.legalActions(state)
-                        #     #     if Directions.STOP in legal:
-                        #     #         legal.remove(Directions.STOP)
-                        #     next_move = self.searchForCapsule(pacman_pos, closestCapsule, legal)
-                        #     if next_move in legal:
-                        #         return api.makeMove(next_move, legal)
-                        #     else:
-                        #         return api.makeMove(random.choice(legal), legal)
                 else:
-                    print "planning on getting even more confused"
-                    next_move = self.searchForFood(pacman_pos, closestFood, legal)
-                    if len(next_move) > 1:
-                        print "Choosing randomly between available moves :("
-                        #pause = raw_input("hi")
-                        next_move = random.choice(next_move)
-                    elif len(next_move) == 1:
-                        print "Removed everything only one available move left"
-                        #pause = raw_input("hi")
-                        next_move = next_move[0]
-                    else:
-                        if len(legal) == 0:
-                            legal = self.resetAvailableLegalMoves(state)
+                    isStuck = self.helpPacmanIsStucked(pacman_pos)
+                    if isStuck or (self.was_stuck and not (closestFood or closestCapsule)):
+                        #pause = raw_input("IS STUCK!")
                         next_move = random.choice(legal)
-                    return api.makeMove(next_move, legal)
+                        self.was_stuck = True
 
-                print "lets do random shit"
+                    else:
+                        print "planning on getting even more confused"
+                        next_move = self.searchForFood(pacman_pos, closestFood, legal)
+                        if len(next_move) > 1:
+                            self.clearDfSearchVars()
+                            print "Choosing randomly between available moves :("
+
+                            next_move = random.choice(next_move)
+                        elif len(next_move) == 1:
+                            self.clearDfSearchVars()
+                            print "Removed everything only one available move left"
+
+                            next_move = next_move[0]
+                        else:
+                            if len(legal) == 0:
+                                legal = self.resetAvailableLegalMoves(state)
+                            #next_move = random.choice(legal)
+                            next_move = self.dfsearch(pacman_pos, legal)
+                        return api.makeMove(next_move, legal)
+
+                #print "lets do random shit"
                 #legal = api.legalActions(state)
                 if Directions.STOP in legal:
                     legal.remove(Directions.STOP)
 
                 if len(legal) == 0:
                     legal = self.resetAvailableLegalMoves(state)
-                return api.makeMove(random.choice(legal), legal)
+                #for move in legal:
+                    #print " LEGAL: " , move
+                next_move = self.dfsearch(pacman_pos, legal)
+                #print "we're trying to move ", next_move, " from ", pacman_pos
+                return api.makeMove(next_move, legal)
 
             ##########################
             ##---PREDATOR MODE ON---##
@@ -394,33 +504,63 @@ class PartialAgent(Agent):
             elif self.predator_mode_on == True and self.super_powers_time > 0:
                 self.super_powers_time -= 1
                 if closestGhost:
-                    print "there is a ghost aaaah"
+                    #print "there is a ghost aaaah"
                     manh_dist_pac_ghost = util.manhattanDistance(pacman_pos, closestGhost)
 
-                    next_move = self.searchForGhostsToEat(pacman_pos, closestGhost, manh_dist_pac_ghost, legal)
+                    next_move = self.chaseGhosts(pacman_pos, closestGhost, manh_dist_pac_ghost, legal)
 
                     if len(next_move) > 1:
-                        print "Choosing randomly :("
+                        self.clearDfSearchVars()
+                        #print "Choosing randomly :("
                         #pause = raw_input("hi")
                         next_move = random.choice(next_move)
                     elif len(next_move) == 1:
-                        print "Removed everything only one available move left ------- Breaks here"
+                        self.clearDfSearchVars()
+                        #print "Removed everything only one available move left ------- Breaks here"
                         #pause = raw_input("hi")
                         next_move = next_move[0]
                     else:
                         if len(legal) == 0:
                             legal = self.resetAvailableLegalMoves(state)
-                        next_move = random.choice(legal)
+                        #next_move = random.choice(legal)
+                        next_move = self.dfsearch(pacman_pos, legal)
                     return api.makeMove(next_move, legal)
                 else:
-                    return api.makeMove(random.choice(legal), legal)
+                    if len(legal) == 0:
+                        legal = self.resetAvailableLegalMoves(state)
+                    next_move = self.dfsearch(pacman_pos, legal)
+                    return api.makeMove(next_move, legal)
 
 
+
+    def helpPacmanIsStucked(self, pacman_pos):
+        counter = 0
+        #pause = raw_input(len(self.positions_history))
+        if len(self.positions_history) > 4:
+            # list = [start:stop:step]
+            lastThreeOdd = self.positions_history[-5:-2:2]
+            #print self.positions_history
+            #p = raw_input("Last three odd" + str(lastThreeOdd))
+            for position in lastThreeOdd:
+                #print "pac pos: ", pacman_pos
+                #print " last3 pos: ", position
+                if pacman_pos == position:
+                    counter += 1
+                    #print "counter: ", counter
+                    if counter == 2:
+                        return True
+        return False
+
+    # Clears any variables that are used for depth first search
+    def clearDfSearchVars(self):
+        self.stack = []
+        self.visited_nodes = []
 
     def dfsearch(self, pacman_pos, legal):
 
         legal_pos_list = []
         unexplored_pos_list = []
+
         self.visited_nodes.append(pacman_pos)
         x_pac, y_pac = pacman_pos
 
@@ -461,115 +601,3 @@ class PartialAgent(Agent):
             return Directions.SOUTH
         elif next_pos[1] == y_pac + 1 and next_pos[0] == x_pac:
             return Directions.NORTH
-
-
-
-    # def cornerSeekingAgent(self, state, pacman, corners, legal):
-    #
-    #     print corners
-    #     # Setup variable to hold the values
-    #     minX = float("inf")
-    #     minY = float("inf")
-    #     maxX = float("-inf")
-    #     maxY = float("-inf")
-    #
-    #     # Sweep through corner coordinates looking for max and min
-    #     # values.
-    #     for i in range(len(corners)):
-    #         cornerX = corners[i][0]
-    #         cornerY = corners[i][1]
-    #
-    #         if cornerX < minX:
-    #             minX = cornerX
-    #         if cornerY < minY:
-    #             minY = cornerY
-    #         if cornerX > maxX:
-    #             maxX = cornerX
-    #         if cornerY > maxY:
-    #             maxY = cornerY
-    #
-    #
-    #     # Check we aren't there:
-    #     if pacman[0] == minX + 1:
-    #         if pacman[1] == minY + 1:
-    #             print "Got to BL!"
-    #             self.BL = True
-    #
-    #     # If not, move towards it, first to the West, then to the South.
-    #     if self.BL == False:
-    #         if pacman[0] > minX + 1:
-    #             if Directions.WEST in legal:
-    #                 return api.makeMove(Directions.WEST, legal)
-    #             else:
-    #                 pick = random.choice(legal)
-    #                 return api.makeMove(pick, legal)
-    #         else:
-    #             if Directions.SOUTH in legal:
-    #                 return api.makeMove(Directions.SOUTH, legal)
-    #             else:
-    #                 pick = random.choice(legal)
-    #                 return api.makeMove(pick, legal)
-    #     #
-    #     # Now we've got the lower left corner
-    #     #
-    #
-    #     # Move towards the top left corner
-    #
-    #     # Check we aren't there:
-    #     if pacman[0] == minX + 1:
-    #        if pacman[1] == maxY - 1:
-    #             print "Got to TL!"
-    #             self.TL = True
-    #
-    #     # If not, move West then North.
-    #     if self.TL == False:
-    #         if pacman[0] > minX + 1:
-    #             if Directions.WEST in legal:
-    #                 return api.makeMove(Directions.WEST, legal)
-    #             else:
-    #                 pick = random.choice(legal)
-    #                 return api.makeMove(pick, legal)
-    #         else:
-    #             if Directions.NORTH in legal:
-    #                 return api.makeMove(Directions.NORTH, legal)
-    #             else:
-    #                 pick = random.choice(legal)
-    #                 return api.makeMove(pick, legal)
-    #
-    #     # Now, the top right corner
-    #
-    #     # Check we aren't there:
-    #     if pacman[0] == maxX - 1:
-    #        if pacman[1] == maxY - 1:
-    #             print "Got to TR!"
-    #             self.TR = True
-    #
-    #     # Move east where possible, then North
-    #     if self.TR == False:
-    #         if pacman[0] < maxX - 1:
-    #             if Directions.EAST in legal:
-    #                 return api.makeMove(Directions.EAST, legal)
-    #             else:
-    #                 pick = random.choice(legal)
-    #                 return api.makeMove(pick, legal)
-    #         else:
-    #             if Directions.NORTH in legal:
-    #                 return api.makeMove(Directions.NORTH, legal)
-    #             else:
-    #                 pick = random.choice(legal)
-    #                 return api.makeMove(pick, legal)
-    #
-    #     # Fromto right it is a straight shot South to get to the bottom right.
-    #
-    #     if pacman[0] == maxX - 1:
-    #        if pacman[1] == minY + 1:
-    #             print "Got to BR!"
-    #             self.BR = True
-    #             self.explored_corners = True
-    #             return api.makeMove(random.choice(legal), legal)
-    #        else:
-    #            print "Nearly there"
-    #            return api.makeMove(Directions.SOUTH, legal)
-    #
-    #     print "Not doing anything!"
-    #     return api.makeMove(random.choice(legal), legal)
