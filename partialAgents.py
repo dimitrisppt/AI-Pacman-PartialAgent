@@ -334,7 +334,7 @@ class PartialAgent(Agent):
     #
     def decideToExitPredatorMode(self, pacman_pos, ghosts_list):
         new_round = True
-        closest_ghost = self.findNearbyGhosts(pacman_pos, ghosts_list)
+        closest_ghost = self.findClosestGhost(pacman_pos, ghosts_list)
 
         if closest_ghost and self.predator_mode_on == True:
             manh_dist_pac_ghost = util.manhattanDistance(pacman_pos, closest_ghost)
@@ -390,13 +390,13 @@ class PartialAgent(Agent):
         return closestCapsule
 
 
-    # Tries to find any nearby ghosts from pacman's position, if any, out of the
+    # Tries to find the closest visible ghost from pacman's position, if any, out of the
     # list of visible ghosts that have been retrieved from the api. The calculation is
     # done using the manhattanDistance function that is provided in the "util.py" file.
     #
     # :param self: Object of the class PartialAgent
     # :param pacman_pos: Current pacman position
-    def findNearbyGhosts(self, pacman_pos, ghosts_list):
+    def findClosestGhost(self, pacman_pos, ghosts_list):
         min_dist_to_ghost = float("inf") # Set minimum distance to be infinity
         closestGhost = []
         # Loop through the list of visible ghosts, if any, and find the closest one to pacman's position
@@ -427,7 +427,7 @@ class PartialAgent(Agent):
 
         closestFood = self.calculateClosestFood(pacman_pos) # Calculates and stores the closest food, if any, from pacman's position at that state.
         closestCapsule = self.calculateClosestCapsule(pacman_pos) # Calculates and stores the closest capsule, if any, from pacman's position at that state.
-        closestGhost = self.findNearbyGhosts(pacman_pos, ghosts_list) # Calculates and stores the closest ghost, if any, from pacman's position at that state.
+        closestGhost = self.findClosestGhost(pacman_pos, ghosts_list) # Calculates and stores the closest ghost, if any, from pacman's position at that state.
 
 
         ##########################################################
@@ -438,110 +438,136 @@ class PartialAgent(Agent):
             next_move = self.dfsearch(pacman_pos, legal)
             return api.makeMove(next_move, legal)
 
+
+        ###################################################################################################################
+        ## Alert mode, pacman saw at least one ghost and is now anticipating to deal with them when they come in his way ##
+        ###################################################################################################################
         else:
 
-            if self.predator_mode_on == False or self.super_powers_time <= 0:
 
+
+            #if self.predator_mode_on == False or self.super_powers_time <= 0:
+
+
+
+
+                # If there is a closest ghost then prioritise to avoid it when it's to close to pacman's position. (< 3 squares)
+                # If it can see it but it's not very close (3 <= distance <= 5) and any potential moves that it might try to do,
+                # do not lead to the death of pacman that means, for that round pacman is still safe to do any available legal move.
                 if closestGhost:
-                    self.clearDfSearchVars()
-                    print "there is a ghost aaaah"
-                    manh_dist_pac_ghost = util.manhattanDistance(pacman_pos, closestGhost)
+                    self.clearDfSearchVars() # clear dfs variables
+                    manh_dist_pac_ghost = util.manhattanDistance(pacman_pos, closestGhost) # calculate manhattan distance between pacman and ghost
 
+                    # Their distance must be less than 3 squares for pacman to get scared
+                    # (pacman tries to avoid the ghost because he needs to have at least two squares difference, as in one round the may end up in the same square)
                     if manh_dist_pac_ghost < 3:
-                        next_move = self.avoidGhosts(pacman_pos, closestGhost, manh_dist_pac_ghost, legal)
+                        next_move = self.avoidGhosts(pacman_pos, closestGhost, manh_dist_pac_ghost, legal) # calculate the next move that keeps the pacman away from the ghost
                         if next_move in legal:
                             return api.makeMove(next_move, legal)
 
+                    # If pacman sees a ghost and their distance is not very close it chases it
+                    # I found that strategy to be quite effective and fun to explore the world, before implementing any path searching algorithm.
                     elif manh_dist_pac_ghost <= 5:
-                        #next_move = self.chaseGhosts(pacman_pos, closestGhost, manh_dist_pac_ghost, legal)
-                        next_move = self.chaseGhosts(pacman_pos, closestGhost, manh_dist_pac_ghost, legal)
+                        next_move = self.chaseGhosts(pacman_pos, closestGhost, manh_dist_pac_ghost, legal) # calculate the next move that brings the pacman closer to the ghost
                         if next_move in legal:
                             return api.makeMove(next_move, legal)
 
+                # If there is no ghost to avoid or chase, and the pacman doesn't really know what to do,
+                # Check whether pacman is stuck, if he's not stuck try to find the nearest food and eat it,
+                # if it can see any food perform a depth first search until he finds any.
                 else:
-                    isStuck = self.helpPacmanIsStucked(pacman_pos)
+                    isStuck = self.isPacmanStuck(pacman_pos)
+                    # If pacman is stuck or pacman was stuck but it still can't see any food or capsule then he randomly performs a move
                     if isStuck or (self.was_stuck and not (closestFood or closestCapsule)):
-                        #pause = raw_input("IS STUCK!")
                         next_move = random.choice(legal)
                         self.was_stuck = True
 
+                    # Pacman searches for food, by removing moves from a list of legal moves that bring him furthest away from the closest food
+                    # if there are more than one good moves that he can perform then randomly chooses between them.
                     else:
-                        print "planning on getting even more confused"
-                        next_move = self.searchForFood(pacman_pos, closestFood, legal)
+                        next_move = self.searchForFood(pacman_pos, closestFood, legal) # calculate the next move that brings the pacman closer to the closest food
+                        # if there are more than one good moves,
                         if len(next_move) > 1:
-                            self.clearDfSearchVars()
-                            print "Choosing randomly between available moves :("
-
-                            next_move = random.choice(next_move)
+                            self.clearDfSearchVars() # clears dfs variables
+                            next_move = random.choice(next_move) # choose randomly between the moves that are left, (doesn't matter which one both of them have the same manhattan distance)
+                        # if there is only one good move,
                         elif len(next_move) == 1:
-                            self.clearDfSearchVars()
-                            print "Removed everything only one available move left"
-
-                            next_move = next_move[0]
+                            self.clearDfSearchVars() # clears dfs variables
+                            next_move = next_move[0] # get the first and only element of the list
+                        # Otherwise,
                         else:
+                            # if the list of legal moves is empty, that means we removed all the legal moves and we need to add them back in order to perform a move.
                             if len(legal) == 0:
-                                legal = self.resetAvailableLegalMoves(state)
-                            #next_move = random.choice(legal)
-                            next_move = self.dfsearch(pacman_pos, legal)
+                                legal = self.resetAvailableLegalMoves(state) # resets the list of legal moves.
+                            next_move = self.dfsearch(pacman_pos, legal) # calculate the next step by performing a depth first search
+
                         return api.makeMove(next_move, legal)
 
-                #print "lets do random shit"
-                #legal = api.legalActions(state)
                 if Directions.STOP in legal:
-                    legal.remove(Directions.STOP)
+                    legal.remove(Directions.STOP) # remove the stop from the list of legal moves because is not very useful
 
+                # if the list of legal moves is empty, that means we removed all the legal moves and we need to add them back in order to perform a move.
                 if len(legal) == 0:
-                    legal = self.resetAvailableLegalMoves(state)
-                #for move in legal:
-                    #print " LEGAL: " , move
-                next_move = self.dfsearch(pacman_pos, legal)
-                #print "we're trying to move ", next_move, " from ", pacman_pos
+                    legal = self.resetAvailableLegalMoves(state) # resets the list of legal moves.
+                next_move = self.dfsearch(pacman_pos, legal) # calculate the next step by performing a depth first search
+
                 return api.makeMove(next_move, legal)
+
+
+
+
+
+
 
             ##########################
             ##---PREDATOR MODE ON---##
             ##########################
-            elif self.predator_mode_on == True and self.super_powers_time > 0:
-                self.super_powers_time -= 1
-                if closestGhost:
-                    #print "there is a ghost aaaah"
-                    manh_dist_pac_ghost = util.manhattanDistance(pacman_pos, closestGhost)
+            # elif self.predator_mode_on == True and self.super_powers_time > 0:
+            #     self.super_powers_time -= 1
+            #     if closestGhost:
+            #         #print "there is a ghost aaaah"
+            #         manh_dist_pac_ghost = util.manhattanDistance(pacman_pos, closestGhost)
+            #
+            #         next_move = self.chaseGhosts(pacman_pos, closestGhost, manh_dist_pac_ghost, legal)
+            #
+            #         if len(next_move) > 1:
+            #             self.clearDfSearchVars()
+            #             #print "Choosing randomly :("
+            #             #pause = raw_input("hi")
+            #             next_move = random.choice(next_move)
+            #         elif len(next_move) == 1:
+            #             self.clearDfSearchVars()
+            #             #print "Removed everything only one available move left ------- Breaks here"
+            #             #pause = raw_input("hi")
+            #             next_move = next_move[0]
+            #         else:
+            #             if len(legal) == 0:
+            #                 legal = self.resetAvailableLegalMoves(state)
+            #             #next_move = random.choice(legal)
+            #             next_move = self.dfsearch(pacman_pos, legal)
+            #         return api.makeMove(next_move, legal)
+            #     else:
+            #         if len(legal) == 0:
+            #             legal = self.resetAvailableLegalMoves(state)
+            #         next_move = self.dfsearch(pacman_pos, legal)
+            #         return api.makeMove(next_move, legal)
 
-                    next_move = self.chaseGhosts(pacman_pos, closestGhost, manh_dist_pac_ghost, legal)
-
-                    if len(next_move) > 1:
-                        self.clearDfSearchVars()
-                        #print "Choosing randomly :("
-                        #pause = raw_input("hi")
-                        next_move = random.choice(next_move)
-                    elif len(next_move) == 1:
-                        self.clearDfSearchVars()
-                        #print "Removed everything only one available move left ------- Breaks here"
-                        #pause = raw_input("hi")
-                        next_move = next_move[0]
-                    else:
-                        if len(legal) == 0:
-                            legal = self.resetAvailableLegalMoves(state)
-                        #next_move = random.choice(legal)
-                        next_move = self.dfsearch(pacman_pos, legal)
-                    return api.makeMove(next_move, legal)
-                else:
-                    if len(legal) == 0:
-                        legal = self.resetAvailableLegalMoves(state)
-                    next_move = self.dfsearch(pacman_pos, legal)
-                    return api.makeMove(next_move, legal)
 
 
 
-    def helpPacmanIsStucked(self, pacman_pos):
-        counter = 0
-        #pause = raw_input(len(self.positions_history))
+    # If pacman is stuck then checks the history of pacman's moves and find the last two odd moves.
+    # That means pacman visited the same position twice. A counter keeps track of that record and it returns true when that happens.
+    def isPacmanStuck(self, pacman_pos):
+        counter = 0 # keep track of how many times pacman visited the same position
+
+        # perform the following part when pacman visited at list 4 positions, to prevent any errors from happening.
         if len(self.positions_history) > 4:
             # list = [start:stop:step]
-            lastThreeOdd = self.positions_history[-5:-2:2]
+            #
+            lastTwoOdd = self.positions_history[-5:-2:2]
             #print self.positions_history
-            #p = raw_input("Last three odd" + str(lastThreeOdd))
-            for position in lastThreeOdd:
+            #p = raw_input("Last three odd" + str(lastTwoOdd))
+            for position in lastTwoOdd:
                 #print "pac pos: ", pacman_pos
                 #print " last3 pos: ", position
                 if pacman_pos == position:
@@ -551,7 +577,7 @@ class PartialAgent(Agent):
                         return True
         return False
 
-    # Clears any variables that are used for depth first search
+    # Clears the variables that are used for the depth first search
     def clearDfSearchVars(self):
         self.stack = []
         self.visited_nodes = []
